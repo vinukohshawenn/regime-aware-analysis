@@ -18,7 +18,6 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Au/Ag Regime Intelligence",
-    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
