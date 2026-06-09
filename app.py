@@ -18,6 +18,7 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Au/Ag Regime Intelligence",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -191,7 +192,7 @@ def load_price_data() -> pd.DataFrame:
     if not os.path.exists(path):
         return pd.DataFrame()
     df = pd.read_csv(path)
-    df["Date"] = pd.to_datetime(df["Date"], dayfirst=True)
+    df["Date"] = pd.to_datetime(df["Date"])
     return df.set_index("Date").sort_index()
 
 @st.cache_data
