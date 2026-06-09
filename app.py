@@ -409,9 +409,18 @@ with t1:
 
     # ── Leaderboard table
     lb_filtered = lb[lb["Model"].isin(selected_models)] if selected_models else lb
+    def highlight_acc(val):
+        try:
+            v = float(val)
+            if v >= 0.545:   return "background-color:#10B98133;color:#10B981;font-weight:600"
+            elif v >= 0.52:  return "background-color:#F59E0B22;color:#F59E0B;font-weight:600"
+            else:            return "color:#9CA3AF"
+        except:
+            return ""
+
     st.dataframe(
         lb_filtered.style
-            .background_gradient(subset=["Accuracy","F1"], cmap="YlOrRd", vmin=0.44, vmax=0.60)
+            .applymap(highlight_acc, subset=["Accuracy","F1"])
             .set_properties(**{"font-family": "IBM Plex Mono, monospace", "font-size": "12px"}),
         use_container_width=True,
         hide_index=True,
