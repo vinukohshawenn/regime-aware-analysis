@@ -63,20 +63,20 @@ gold_silver_revised.csv  (raw)
 │ 03 · Feature         │  22 features: lags, rolling stats,
 │ Engineering          │  GARCH vol, macro, Au/Ag ratio
 └──────────────────────┘  Binary target: next-day direction (UP/DOWN)
-          │
-    ┌─────┴──────┬────────────┬──────────┐
-    ▼            ▼            ▼          ▼
-┌────────┐  ┌────────┐  ┌────────┐  ┌──────┐
-│ 04     │  │ 05     │  │ 06     │  │ 07   │
-│ ARIMA  │  │Logistic│  │XGBoost │  │ LSTM │
-│ ARIMAX │  │  Reg   │  │   RF   │  │      │
-└────────┘  └────────┘  └────────┘  └──────┘
-    │            │            │          │
-    └────────────┴────────────┴──────────┘
+          │          
+    ┌─────┴───────┬─────────┐
+    ▼            ▼          ▼
+┌────────┐   ┌────────┐  ┌──────┐
+│ 04     │   │ 05     │  │ 06   │
+│ ARIMA  │   │XGBoost │  │ LSTM │
+│ ARIMAX │   │   RF   │  │      │
+└────────┘   └────────┘  └──────┘
+    │            │          │
+    └────────────┴──────────┘
                          │
                          ▼
             ┌─────────────────────────┐
-            │  08 · Master Comparison  │
+            │  07 · Master Comparison  │
             │  Leaderboard · Heatmaps  │
             │  Backtests · Summary     │
             └─────────────────────────┘
@@ -96,10 +96,9 @@ gold_silver_revised.csv  (raw)
 |---|---|---|
 | `04_ARIMA_ARIMAX` | ARIMA(1,0,1) | Sign of walk-forward forecast |
 | `04_ARIMA_ARIMAX` | ARIMAX(1,0,1) | Sign of forecast + macro exogenous |
-| `05_Logistic_Regression` | Logistic Regression | Direct probability output |
-| `06_ML_Classification` | XGBoost Classifier | Probability threshold 0.5 |
-| `06_ML_Classification` | Random Forest | Probability threshold 0.5 |
-| `07_LSTM_Classification` | LSTM (2-layer, sigmoid) | Sigmoid output threshold 0.5 |
+| `05_ML_Classification` | XGBoost Classifier | Probability threshold 0.5 |
+| `05_ML_Classification` | Random Forest | Probability threshold 0.5 |
+| `06_LSTM_Classification` | LSTM (2-layer, sigmoid) | Sigmoid output threshold 0.5 |
 
 **Walk-forward validation:** ARIMA/ARIMAX refit every 21 trading days on an expanding window. No look-ahead bias. Unified 70/30 train/test split across all models.
 
