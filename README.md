@@ -8,7 +8,7 @@
 > **Can any model reliably predict the next-day direction of Gold and Silver returns — and does that signal actually generate alpha?**
 > This project answers that question across 6 model classes, 2 regime systems, and 5 years of out-of-sample data.
 
-**[→ Live Dashboard](YOUR_STREAMLIT_URL_HERE)**
+**[→ Live Dashboard](https://regime-aware-analysis-ekpbaiphwe8kgtn4cnpsot.streamlit.app/)**
 
 ---
 
