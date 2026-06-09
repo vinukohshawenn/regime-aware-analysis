@@ -420,7 +420,7 @@ with t1:
 
     st.dataframe(
         lb_filtered.style
-            .applymap(highlight_acc, subset=["Accuracy","F1"])
+            .map(highlight_acc, subset=["Accuracy","F1"])
             .set_properties(**{"font-family": "IBM Plex Mono, monospace", "font-size": "12px"}),
         use_container_width=True,
         hide_index=True,
@@ -471,8 +471,9 @@ with t2:
     vol_lb = regime_accuracy_table(all_preds, asset_key, "vol_regime")
     if not vol_lb.empty:
         vol_sel = vol_lb[vol_lb["Model"].isin(selected_models)]
-        pivot_acc = vol_sel.pivot(index="Model", columns="Regime", values="Accuracy")
-        pivot_n   = vol_sel.pivot(index="Model", columns="Regime", values="n")
+        if not vol_sel.empty:
+            pivot_acc = vol_sel.pivot(index="Model", columns="Regime", values="Accuracy")
+            pivot_n   = vol_sel.pivot(index="Model", columns="Regime", values="n")
 
         annot = [[f"{pivot_acc.loc[m,r]:.3f}<br><span style='font-size:9px'>n={int(pivot_n.loc[m,r])}</span>"
                   for r in pivot_acc.columns]
@@ -500,7 +501,7 @@ with t2:
         st.plotly_chart(fig, use_container_width=True)
 
     # F1 heatmap
-    if not vol_lb.empty:
+    if not vol_lb.empty and not vol_sel.empty:
         pivot_f1 = vol_sel.pivot(index="Model", columns="Regime", values="F1")
         fig2 = go.Figure(go.Heatmap(
             z=pivot_f1.values,
@@ -525,7 +526,8 @@ with t2:
     period_lb = regime_accuracy_table(all_preds, asset_key, "period_regime")
     if not period_lb.empty:
         per_sel   = period_lb[period_lb["Model"].isin(selected_models)]
-        pivot_per = per_sel.pivot(index="Model", columns="Regime", values="Accuracy")
+        if not per_sel.empty:
+            pivot_per = per_sel.pivot(index="Model", columns="Regime", values="Accuracy")
         fig3 = go.Figure(go.Heatmap(
             z=pivot_per.values,
             x=[c.replace("_"," ").title() for c in pivot_per.columns],
@@ -702,6 +704,9 @@ with t3:
 # TAB 4 — MODEL DEEP-DIVE
 # ═════════════════════════════════════════════════════════════
 with t4:
+    if not selected_keys:
+        st.info("Select at least one model from the sidebar to use this tab.")
+        st.stop()
     sel_model_label = st.selectbox(
         "SELECT MODEL",
         options=[MODEL_LABELS[k] for k in selected_keys],
@@ -826,6 +831,9 @@ with t4:
 # TAB 5 — PRICE & SIGNALS
 # ═════════════════════════════════════════════════════════════
 with t5:
+    if not selected_keys:
+        st.info("Select at least one model from the sidebar to use this tab.")
+        st.stop()
     signal_model = st.selectbox(
         "Signal source model",
         options=[MODEL_LABELS[k] for k in selected_keys],
@@ -918,18 +926,21 @@ with t5:
                 x=price_data.index, y=price_data[price_col],
                 name=f"{asset_label} Price",
                 line=dict(color=asset_color, width=1.5),
+                zorder=5,
             ))
-            # Shade low_vol / high_vol bands
-            reg_series = price_data[vol_reg_col]
-            prev_reg = None
-            band_start = None
+            # Efficient regime shading — find contiguous blocks, add one vrect per block
+            reg_series  = price_data[vol_reg_col].dropna()
+            block_start = reg_series.index[0]
+            block_reg   = reg_series.iloc[0]
             for date, reg in reg_series.items():
-                if reg != prev_reg:
-                    if band_start is not None and prev_reg is not None:
-                        fc = "rgba(16,185,129,0.07)" if prev_reg == "low_vol" else "rgba(239,68,68,0.07)"
-                        fig_reg.add_vrect(x0=band_start, x1=date, fillcolor=fc, line_width=0)
-                    band_start = date
-                    prev_reg = reg
+                if reg != block_reg:
+                    fc = "rgba(16,185,129,0.08)" if block_reg == "low_vol" else "rgba(239,68,68,0.08)"
+                    fig_reg.add_vrect(x0=block_start, x1=date, fillcolor=fc, line_width=0)
+                    block_start = date
+                    block_reg   = reg
+            # Add the final segment
+            fc = "rgba(16,185,129,0.08)" if block_reg == "low_vol" else "rgba(239,68,68,0.08)"
+            fig_reg.add_vrect(x0=block_start, x1=reg_series.index[-1], fillcolor=fc, line_width=0)
 
             fig_reg.update_layout(**{**LAYOUT,
                 "title": dict(text=f"{asset_label} — GARCH Regime Overlay (Green=Low Vol, Red=High Vol)",
