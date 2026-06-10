@@ -1,4 +1,4 @@
-# ⚡ Regime Signal Lab
+# ⚡ AlphaRegime
 ### Regime-Aware Direction Classification for Gold & Silver Futures
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
