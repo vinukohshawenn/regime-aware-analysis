@@ -188,7 +188,7 @@ To regenerate predictions from scratch, run notebooks `01` through `07` in order
 ```
 regime-signal-lab/
 │
-├── app.py                               ← Streamlit dashboard (~960 lines)
+├── app.py                               ← Streamlit dashboard
 ├── requirements.txt
 ├── README.md
 │
