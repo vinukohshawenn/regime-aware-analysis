@@ -25,23 +25,13 @@ Instead of asking *"how accurate is your return forecast?"*, this project asks:
 
 ## Key Findings
 
-**For Gold**
 | Model | Gold Acc | Gold Alpha | Silver Acc | Silver Alpha |
 |---|:---:|:---:|:---:|:---:|
 | ARIMA | 51.2% | **+3.4%** ✅ | 55.2% | +1.5% ✅ |
 | ARIMAX | 48.4% | -11.4% | 55.1% | -21.8% |
-| XGBoost | **52.4%** | -29.6% | 53.4% | -84.3% |
-| Random Forest | 52.2% | -30.3% | **55.0%** | -87.7% |
+| XGBoost | **52.4%** | -29.6% | 53.4% | -241.4% |
+| Random Forest | 52.2% | -30.3% | **55.0%** | -244.8% |
 | LSTM | 49.1% | -38.0% | 51.8% | -103.0% |
-
-**For Silver**
-| Model | Silver Acc | Silver Strategy | Silver B&H | Silver Alpha |
-|---|:---:|:---:|:---:|:---:|
-| ARIMA | **55.2%** | +158.6% | +157.1% | **+1.5%** ✅ |
-| ARIMAX | 55.1% | +135.3% | +157.1% | -21.8% |
-| Random Forest | 55.0% | -87.7% | +157.1% | -244.8% |
-| XGBoost | 53.4% | -84.3% | +157.1% | -241.4% |
-| LSTM | 51.8% | +46.2% | +149.2% | -103.0% |
 
 > Alpha = strategy cumulative return minus buy-and-hold, out-of-sample (May 2021 – Mar 2026)
 
@@ -49,7 +39,7 @@ Instead of asking *"how accurate is your return forecast?"*, this project asks:
 
 **ARIMAX vs ARIMA:** Adding VIX, 10-year yield, and USD Index as exogenous variables hurts performance on both assets. Macro features don't carry incremental directional signal beyond past returns at the 1-day horizon.
 
-Note on Silver: The test period (May 2021 – Mar 2026) coincided with an exceptional Silver bull run (+157% buy-and-hold). Long/short strategies structurally underperform in strong directional trends — negative Silver alpha reflects the market environment, not model failure. Directional accuracy (51–55%) remains consistent across both assets.
+**Note on Silver: The test period (May 2021 – Mar 2026) coincided with an exceptional Silver bull run (+157% buy-and-hold). Long/short strategies structurally underperform in strong directional trends — negative Silver alpha reflects the market environment, not model failure. Directional accuracy (51–55%) remains consistent across both assets.**
 ---
 
 ## Architecture
@@ -243,9 +233,7 @@ regime-signal-lab/
 
 ---
 
-*Built as a portfolio project exploring regime-aware model comparison in commodity futures markets.*
-
-##Questions that you might be having, which I have answers for
+## Questions that you might be having, which I have answers for
 
 -**Why did you frame this as classification and not regression?**
 Regression predicts the magnitude of the return. Nobody trades magnitude — you trade direction. Even a perfect RMSE score is useless if the model is wrong about up vs down. Classification directly optimises for what matters.
@@ -279,7 +267,9 @@ Three things. First, walk-forward retraining for ML and LSTM, not just ARIMA. Se
 
 ---
 
-##Author
+## Author
 **Vinay Sathish**
+---
+*Built as a portfolio project exploring regime-aware model comparison in commodity futures markets.*
 
 ---
