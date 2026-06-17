@@ -207,12 +207,15 @@ def load_price():
 
     return df
 
-
 @st.cache_data
 def load_all() -> dict:
-    return {mk: {"au": load_pred(mk, "au"),
-                 "ag": load_pred(mk, "ag")}
-            for mk in MODEL_LABELS}
+    return {
+        mk: {
+            "au": load_pred(mk, "au"),
+            "ag": load_pred(mk, "ag")
+        }
+        for mk in MODEL_LABELS
+    }
 
 # ─────────────────────────────────────────────────────────────
 # METRICS (PATCHED FOR SAFETY)
