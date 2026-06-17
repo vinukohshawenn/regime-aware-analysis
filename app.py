@@ -375,7 +375,6 @@ t1, t2, t3, t4, t5 = st.tabs([
     "🔬  Model Deep-Dive",
     "📊  Price & Signals",
 ])
-
 # ════════════════════════════════════════════════════════════
 # TAB 1 — LEADERBOARD
 # ════════════════════════════════════════════════════════════
@@ -399,13 +398,16 @@ with t1:
         except Exception:
             return ""
 
-    if lb.empty:
-        st.error("No prediction files could be loaded.")
+    if lb is None or lb.empty:
+        st.error("No valid prediction metrics could be calculated. Check your model data.")
         st.stop()
+
+    # FIX: Safely check for columns before applying styles to prevent the KeyError
+    style_cols = [c for c in ["Accuracy", "F1"] if c in lb.columns]
 
     st.dataframe(
         lb.style
-          .map(_hl, subset=["Accuracy", "F1"])
+          .map(_hl, subset=style_cols)
           .set_properties(**{
               "font-family": "monospace",
               "font-size": "12px"
@@ -416,64 +418,65 @@ with t1:
 
     st.markdown("<div class='sec'>Accuracy Comparison</div>", unsafe_allow_html=True)
 
-    lb_s = lb.sort_values("Accuracy")
+    lb_s = lb.sort_values("Accuracy", ascending=True) if "Accuracy" in lb.columns else lb
 
-    fig = go.Figure(go.Bar(
-        x=lb_s["Accuracy"],
-        y=lb_s["Model"],
-        orientation="h",
-        marker=dict(
-            color=[MODEL_COLORS.get(m, "#888") for m in lb_s["Model"]],
-            line=dict(color=BORDER, width=1)
-        ),
-        text=[f"{v:.3f}" for v in lb_s["Accuracy"]],
-        textposition="outside",
-        textfont=dict(
-            family="monospace",
-            size=11,
-            color="#E8E8F4"
-        ),
-    ))
-
-    fig.add_vline(
-        x=0.50,
-        line_dash="dot",
-        line_color=NEG_C,
-        line_width=1.5,
-        annotation_text="Random (50%)",
-        annotation_font=dict(size=10, color=NEG_C),
-    )
-
-    fig.update_layout(
-        **{
-            **PLOT_LAYOUT,
-            "title": dict(
-                text=f"{asset_label} — Directional Accuracy",
-                font=dict(size=13, color=asset_color),
+    if not lb_s.empty and "Accuracy" in lb_s.columns:
+        fig = go.Figure(go.Bar(
+            x=lb_s["Accuracy"],
+            y=lb_s["Model"],
+            orientation="h",
+            marker=dict(
+                color=[MODEL_COLORS.get(m, "#888") for m in lb_s["Model"]],
+                line=dict(color=BORDER, width=1)
             ),
-            "xaxis": {
-                **PLOT_LAYOUT["xaxis"],
-                "range": [0.40, 0.68],
-                "tickformat": ".0%",
-            },
-            "height": 300,
-        }
-    )
+            text=[f"{v:.3f}" for v in lb_s["Accuracy"]],
+            textposition="outside",
+            textfont=dict(
+                family="monospace",
+                size=11,
+                color="#E8E8F4"
+            ),
+        ))
 
-    st.plotly_chart(fig, use_container_width=True)
+        fig.add_vline(
+            x=0.50,
+            line_dash="dot",
+            line_color=NEG_C,
+            line_width=1.5,
+            annotation_text="Random (50%)",
+            annotation_font=dict(size=10, color=NEG_C),
+        )
 
-    best_name = lb.iloc[0]["Model"]
-    best_acc = lb.iloc[0]["Accuracy"]
+        fig.update_layout(
+            **{
+                **PLOT_LAYOUT,
+                "title": dict(
+                    text=f"{asset_label} — Directional Accuracy",
+                    font=dict(size=13, color=asset_color),
+                ),
+                "xaxis": {
+                    **PLOT_LAYOUT["xaxis"],
+                    "range": [0.40, 0.68],
+                    "tickformat": ".0%",
+                },
+                "height": 300,
+            }
+        )
 
-    st.markdown(
-        f"<div class='insight'>📌 <b>{best_name}</b> leads on {asset_label} "
-        f"with <b>{best_acc:.1%}</b> directional accuracy. "
-        f"All models cluster 50–56% — expected for daily financial returns. "
-        f"A sustained 53% hit rate is commercially meaningful when "
-        f"combined with a disciplined long/short strategy.</div>",
-        unsafe_allow_html=True,
-    )
+        st.plotly_chart(fig, use_container_width=True)
 
+        best_name = lb.iloc[0].get("Model", "Unknown")
+        best_acc = lb.iloc[0].get("Accuracy", 0)
+
+        st.markdown(
+            f"<div class='insight'>📌 <b>{best_name}</b> leads on {asset_label} "
+            f"with <b>{best_acc:.1%}</b> directional accuracy. "
+            f"All models cluster 50–56% — expected for daily financial returns. "
+            f"A sustained 53% hit rate is commercially meaningful when "
+            f"combined with a disciplined long/short strategy.</div>",
+            unsafe_allow_html=True,
+        )
+        
 # ════════════════════════════════════════════════════════════
 # TAB 2 — REGIME HEATMAP
 # ════════════════════════════════════════════════════════════
