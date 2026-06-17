@@ -21,8 +21,11 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+if not os.path.isdir(DATA_DIR):
+    DATA_DIR = BASE_DIR
 
 # ─────────────────────────────────────────────────────────────
 # CONSTANTS
@@ -128,42 +131,62 @@ html, body, [data-testid="stAppViewContainer"] {{
 # DATA LOADING  (cached)
 # ─────────────────────────────────────────────────────────────
 @st.cache_data
-def load_pred(model_key: str, asset_key: str) -> pd.DataFrame:
-    path = os.path.join(DATA_DIR, f"preds_{model_key}_{asset_key}.csv")
-    if not os.path.exists(path):
+def load_pred(model_key: str, asset_key: str):
+
+    candidates = [
+        os.path.join(DATA_DIR, f"preds_{model_key}_{asset_key}.csv"),
+        os.path.join(os.path.dirname(DATA_DIR), f"preds_{model_key}_{asset_key}.csv"),
+    ]
+
+    path = next((p for p in candidates if os.path.exists(p)), None)
+
+    if path is None:
         return pd.DataFrame()
+
     df = pd.read_csv(path)
-    # normalise date column (may be 'Date' or 'Unnamed: 0')
-    df = df.rename(columns={df.columns[0]: "Date"})
-    df["Date"] = pd.to_datetime(df["Date"])
-    df = df.set_index("Date").sort_index()
-    # normalise returns to single column 'ret'
-    for c in ["returns", f"{asset_key}_returns",
-              "au_returns", "ag_returns"]:
+
+    df.rename(columns={df.columns[0]: "Date"}, inplace=True)
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
+
+    for c in ["returns", "au_returns", "ag_returns"]:
         if c in df.columns:
             df["ret"] = df[c]
             break
-    # ensure prob column exists
+
     if "prob" not in df.columns:
         df["prob"] = np.nan
+
     return df
 
-
 @st.cache_data
-def load_price() -> pd.DataFrame:
-    path = os.path.join(DATA_DIR, "gold_silver_garch.csv")
-    if not os.path.exists(path):
-        alt = os.path.join(DATA_DIR, "gold_silver_garch(2).csv")
-        if os.path.exists(alt):
-            path = alt
-    if not os.path.exists(path):
+def load_price():
+
+    candidates = [
+        "gold_silver_garch.csv",
+        "gold_silver_garch(2).csv",
+        "gold_silver_garch(3).csv",
+    ]
+
+    path = None
+
+    for f in candidates:
+        p = os.path.join(DATA_DIR, f)
+        if os.path.exists(p):
+            path = p
+            break
+
+    if path is None:
         return pd.DataFrame()
+
     df = pd.read_csv(path)
-    df["Date"] = pd.to_datetime(df["Date"])
-    df = df.set_index("Date").sort_index()
-    # drop junk column if present
+
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
+
     if "ID_Column" in df.columns:
-        df = df.drop(columns=["ID_Column"])
+        df.drop(columns=["ID_Column"], inplace=True)
+
     return df
 
 
@@ -201,27 +224,43 @@ def metrics(df: pd.DataFrame, rcol: str = None,
     )
 
 
-def leaderboard(preds: dict, ak: str, sel_keys: list) -> pd.DataFrame:
+def leaderboard(preds, ak, sel_keys):
+
     rows = []
+
     for mk in sel_keys:
+
         df = preds[mk][ak]
-        m  = metrics(df)
+
+        if df.empty:
+            continue
+
+        m = metrics(df)
+
         if not m:
             continue
+
         rows.append({
-            "Model":    MODEL_LABELS[mk],
-            "Accuracy": round(m["accuracy"], 4),
-            "F1":       round(m["f1"], 4),
+            "Model": MODEL_LABELS[mk],
+            "Accuracy": round(m["accuracy"],4),
+            "F1": round(m["f1"],4),
             "Hit Rate": f"{m['hit']:.1%}",
             "Strategy": f"{m['strat']:+.1%}",
-            "B&H":      f"{m['bh']:+.1%}",
-            "Alpha":    f"{m['alpha']:+.1%}",
+            "B&H": f"{m['bh']:+.1%}",
+            "Alpha": f"{m['alpha']:+.1%}",
         })
-    lb = pd.DataFrame(rows)
-    if lb.empty:
-        return lb
-    return lb.sort_values("Accuracy", ascending=False).reset_index(drop=True)
 
+    if len(rows)==0:
+        return pd.DataFrame(columns=[
+            "Model","Accuracy","F1",
+            "Hit Rate","Strategy","B&H","Alpha"
+        ])
+
+    return (
+        pd.DataFrame(rows)
+        .sort_values("Accuracy", ascending=False)
+        .reset_index(drop=True)
+    )
 
 def regime_table(preds: dict, ak: str, sel_keys: list,
                  rcol: str) -> pd.DataFrame:
@@ -392,13 +431,20 @@ with t1:
         except Exception:
             return ""
 
-    st.dataframe(
-        lb.style
-          .map(_hl, subset=["Accuracy", "F1"])
-          .set_properties(**{"font-family": "monospace", "font-size": "12px"}),
-        use_container_width=True,
-        hide_index=True,
-    )
+if lb.empty:
+    st.error("No prediction files could be loaded.")
+    st.stop()
+
+st.dataframe(
+    lb.style
+      .map(_hl, subset=["Accuracy", "F1"])
+      .set_properties(**{
+          "font-family": "monospace",
+          "font-size": "12px"
+      }),
+    use_container_width=True,
+    hide_index=True,
+)
 
     st.markdown("<div class='sec'>Accuracy Comparison</div>", unsafe_allow_html=True)
     lb_s = lb.sort_values("Accuracy")
