@@ -130,8 +130,12 @@ html, body, [data-testid="stAppViewContainer"] {{
 # ─────────────────────────────────────────────────────────────
 # DATA LOADING  (cached)
 # ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# DATA LOADING  (cached)
+# ─────────────────────────────────────────────────────────────
 @st.cache_data
 def load_pred(model_key: str, asset_key: str):
+
     candidates = [
         os.path.join(DATA_DIR, f"preds_{model_key}_{asset_key}.csv"),
         os.path.join(os.path.dirname(DATA_DIR), f"preds_{model_key}_{asset_key}.csv"),
@@ -143,32 +147,11 @@ def load_pred(model_key: str, asset_key: str):
         return pd.DataFrame()
 
     df = pd.read_csv(path)
-    
-    # Clean column names
-    df.columns = [str(c).strip() for c in df.columns]
 
-    # Handle case where index was parsed automatically
-    if not isinstance(df.index, pd.RangeIndex):
-        df.index = pd.to_datetime(df.index, errors="coerce")
-        df.index.name = "Date"
-        df = df.reset_index()
+    df.rename(columns={df.columns[0]: "Date"}, inplace=True)
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
 
-    # Safely identify and rename Date column
-    if "Date" not in df.columns:
-        if "Unnamed: 0" in df.columns:
-            df.rename(columns={"Unnamed: 0": "Date"}, inplace=True)
-        else:
-            # Fallback: rename the first column only if it's not a core metric
-            first_col = df.columns[0]
-            if first_col not in ["actual", "pred", "prob", "forecast", "returns", "au_returns", "ag_returns"]:
-                df.rename(columns={first_col: "Date"}, inplace=True)
-
-    # Set and sort Date index
-    if "Date" in df.columns:
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
-
-    # Standardize returns column
     for c in ["returns", "au_returns", "ag_returns"]:
         if c in df.columns:
             df["ret"] = df[c]
@@ -181,6 +164,7 @@ def load_pred(model_key: str, asset_key: str):
 
 @st.cache_data
 def load_price():
+
     candidates = [
         "gold_silver_garch.csv",
         "gold_silver_garch(2).csv",
@@ -207,14 +191,6 @@ def load_price():
         df.drop(columns=["ID_Column"], inplace=True)
 
     return df
-
-
-@st.cache_data
-def load_all() -> dict:
-    return {mk: {"au": load_pred(mk, "au"),
-                 "ag": load_pred(mk, "ag")}
-            for mk in MODEL_LABELS}
-
 # ─────────────────────────────────────────────────────────────
 # METRICS
 # ─────────────────────────────────────────────────────────────
@@ -375,6 +351,7 @@ t1, t2, t3, t4, t5 = st.tabs([
     "🔬  Model Deep-Dive",
     "📊  Price & Signals",
 ])
+
 # ════════════════════════════════════════════════════════════
 # TAB 1 — LEADERBOARD
 # ════════════════════════════════════════════════════════════
@@ -398,11 +375,11 @@ with t1:
         except Exception:
             return ""
 
-    if lb is None or lb.empty:
-        st.error("No valid prediction metrics could be calculated. Check your model data.")
+    if lb.empty:
+        st.error("No prediction files could be loaded.")
         st.stop()
 
-    # FIX: Safely check for columns before applying styles to prevent the KeyError
+    # Safely select style columns to prevent KeyError
     style_cols = [c for c in ["Accuracy", "F1"] if c in lb.columns]
 
     st.dataframe(
@@ -418,65 +395,64 @@ with t1:
 
     st.markdown("<div class='sec'>Accuracy Comparison</div>", unsafe_allow_html=True)
 
-    lb_s = lb.sort_values("Accuracy", ascending=True) if "Accuracy" in lb.columns else lb
+    lb_s = lb.sort_values("Accuracy")
 
-    if not lb_s.empty and "Accuracy" in lb_s.columns:
-        fig = go.Figure(go.Bar(
-            x=lb_s["Accuracy"],
-            y=lb_s["Model"],
-            orientation="h",
-            marker=dict(
-                color=[MODEL_COLORS.get(m, "#888") for m in lb_s["Model"]],
-                line=dict(color=BORDER, width=1)
+    fig = go.Figure(go.Bar(
+        x=lb_s["Accuracy"],
+        y=lb_s["Model"],
+        orientation="h",
+        marker=dict(
+            color=[MODEL_COLORS.get(m, "#888") for m in lb_s["Model"]],
+            line=dict(color=BORDER, width=1)
+        ),
+        text=[f"{v:.3f}" for v in lb_s["Accuracy"]],
+        textposition="outside",
+        textfont=dict(
+            family="monospace",
+            size=11,
+            color="#E8E8F4"
+        ),
+    ))
+
+    fig.add_vline(
+        x=0.50,
+        line_dash="dot",
+        line_color=NEG_C,
+        line_width=1.5,
+        annotation_text="Random (50%)",
+        annotation_font=dict(size=10, color=NEG_C),
+    )
+
+    fig.update_layout(
+        **{
+            **PLOT_LAYOUT,
+            "title": dict(
+                text=f"{asset_label} — Directional Accuracy",
+                font=dict(size=13, color=asset_color),
             ),
-            text=[f"{v:.3f}" for v in lb_s["Accuracy"]],
-            textposition="outside",
-            textfont=dict(
-                family="monospace",
-                size=11,
-                color="#E8E8F4"
-            ),
-        ))
+            "xaxis": {
+                **PLOT_LAYOUT["xaxis"],
+                "range": [0.40, 0.68],
+                "tickformat": ".0%",
+            },
+            "height": 300,
+        }
+    )
 
-        fig.add_vline(
-            x=0.50,
-            line_dash="dot",
-            line_color=NEG_C,
-            line_width=1.5,
-            annotation_text="Random (50%)",
-            annotation_font=dict(size=10, color=NEG_C),
-        )
+    st.plotly_chart(fig, use_container_width=True)
 
-        fig.update_layout(
-            **{
-                **PLOT_LAYOUT,
-                "title": dict(
-                    text=f"{asset_label} — Directional Accuracy",
-                    font=dict(size=13, color=asset_color),
-                ),
-                "xaxis": {
-                    **PLOT_LAYOUT["xaxis"],
-                    "range": [0.40, 0.68],
-                    "tickformat": ".0%",
-                },
-                "height": 300,
-            }
-        )
+    best_name = lb.iloc[0]["Model"]
+    best_acc = lb.iloc[0]["Accuracy"]
 
-        st.plotly_chart(fig, use_container_width=True)
-
-        best_name = lb.iloc[0].get("Model", "Unknown")
-        best_acc = lb.iloc[0].get("Accuracy", 0)
-
-        st.markdown(
-            f"<div class='insight'>📌 <b>{best_name}</b> leads on {asset_label} "
-            f"with <b>{best_acc:.1%}</b> directional accuracy. "
-            f"All models cluster 50–56% — expected for daily financial returns. "
-            f"A sustained 53% hit rate is commercially meaningful when "
-            f"combined with a disciplined long/short strategy.</div>",
-            unsafe_allow_html=True,
-        )
-        
+    st.markdown(
+        f"<div class='insight'>📌 <b>{best_name}</b> leads on {asset_label} "
+        f"with <b>{best_acc:.1%}</b> directional accuracy. "
+        f"All models cluster 50–56% — expected for daily financial returns. "
+        f"A sustained 53% hit rate is commercially meaningful when "
+        f"combined with a disciplined long/short strategy.</div>",
+        unsafe_allow_html=True,
+    )
+    
 # ════════════════════════════════════════════════════════════
 # TAB 2 — REGIME HEATMAP
 # ════════════════════════════════════════════════════════════
