@@ -371,108 +371,85 @@ with t1:
 
     lb = leaderboard(all_preds, ak, sel_keys)
 
-    if not lb.empty:
-        best      = lb.iloc[0]
-        best_f1r  = lb.loc[lb["F1"].idxmax()]
-
-        # alpha with regime filter applied
-        alpha_map = {}
-        for mk in sel_keys:
-            m = metrics(all_preds[mk][ak], rcol,
-                        rfilter if rfilter != "All" else None)
-            if m:
-                alpha_map[mk] = m["alpha"]
-
-        c1, c2, c3, c4 = st.columns(4)
-        kpi_data = [
-            (c1, "BEST ACCURACY",  f"{best['Accuracy']:.1%}",   best["Model"]),
-            (c2, "BEST F1 SCORE",  f"{best_f1r['F1']:.3f}",     best_f1r["Model"]),
-        ]
-        for col, lbl, val, sub in kpi_data:
-            with col:
-                st.markdown(
-                    f"<div class='kpi'><div class='kpi-label'>{lbl}</div>"
-                    f"<div class='kpi-value'>{val}</div>"
-                    f"<div class='kpi-sub'>{sub}</div></div>",
-                    unsafe_allow_html=True,
-                )
-
-        if alpha_map:
-            best_a_key = max(alpha_map, key=alpha_map.get)
-            best_a_val = alpha_map[best_a_key]
-            a_color = POS_C if best_a_val > 0 else NEG_C
-            with c3:
-                st.markdown(
-                    f"<div class='kpi'><div class='kpi-label'>BEST ALPHA</div>"
-                    f"<div class='kpi-value' style='color:{a_color}'>"
-                    f"{best_a_val:+.1%}</div>"
-                    f"<div class='kpi-sub'>{MODEL_LABELS[best_a_key]} vs Buy & Hold"
-                    f"</div></div>",
-                    unsafe_allow_html=True,
-                )
-        above50 = (lb["Accuracy"] > 0.50).sum()
-        with c4:
-            st.markdown(
-                f"<div class='kpi'><div class='kpi-label'>BEAT RANDOM</div>"
-                f"<div class='kpi-value'>{above50}/{len(lb)}</div>"
-                f"<div class='kpi-sub'>models above 50% accuracy</div></div>",
-                unsafe_allow_html=True,
-            )
-
     st.markdown("<div class='sec'>Full Leaderboard</div>", unsafe_allow_html=True)
 
-    # colour accuracy/F1 cells without matplotlib
     def _hl(val):
         try:
             v = float(val)
-            if v >= 0.55:  return "background-color:#10B98122;color:#10B981;font-weight:600"
-            elif v >= 0.52: return "background-color:#F59E0B18;color:#F59E0B;font-weight:600"
+            if v >= 0.55:
+                return "background-color:#10B98122;color:#10B981;font-weight:600"
+            elif v >= 0.52:
+                return "background-color:#F59E0B18;color:#F59E0B;font-weight:600"
             return "color:#9CA3AF"
         except Exception:
             return ""
 
-if lb.empty:
-    st.error("No prediction files could be loaded.")
-    st.stop()
+    if lb.empty:
+        st.error("No prediction files could be loaded.")
+        st.stop()
 
-st.dataframe(
-    lb.style
-      .map(_hl, subset=["Accuracy", "F1"])
-      .set_properties(**{
-          "font-family": "monospace",
-          "font-size": "12px"
-      }),
-    use_container_width=True,
-    hide_index=True,
-)
+    st.dataframe(
+        lb.style
+          .map(_hl, subset=["Accuracy", "F1"])
+          .set_properties(**{
+              "font-family": "monospace",
+              "font-size": "12px"
+          }),
+        use_container_width=True,
+        hide_index=True,
+    )
 
     st.markdown("<div class='sec'>Accuracy Comparison</div>", unsafe_allow_html=True)
+
     lb_s = lb.sort_values("Accuracy")
+
     fig = go.Figure(go.Bar(
         x=lb_s["Accuracy"],
         y=lb_s["Model"],
         orientation="h",
-        marker=dict(color=[MODEL_COLORS.get(m, "#888") for m in lb_s["Model"]],
-                    line=dict(color=BORDER, width=1)),
+        marker=dict(
+            color=[MODEL_COLORS.get(m, "#888") for m in lb_s["Model"]],
+            line=dict(color=BORDER, width=1)
+        ),
         text=[f"{v:.3f}" for v in lb_s["Accuracy"]],
         textposition="outside",
-        textfont=dict(family="monospace", size=11, color="#E8E8F4"),
+        textfont=dict(
+            family="monospace",
+            size=11,
+            color="#E8E8F4"
+        ),
     ))
-    fig.add_vline(x=0.50, line_dash="dot", line_color=NEG_C,
-                  line_width=1.5,
-                  annotation_text="Random (50%)",
-                  annotation_font=dict(size=10, color=NEG_C))
-    fig.update_layout(**{**PLOT_LAYOUT,
-        "title": dict(text=f"{asset_label} — Directional Accuracy",
-                      font=dict(size=13, color=asset_color)),
-        "xaxis": {**PLOT_LAYOUT["xaxis"],
-                  "range": [0.40, 0.68], "tickformat": ".0%"},
-        "height": 300,
-    })
+
+    fig.add_vline(
+        x=0.50,
+        line_dash="dot",
+        line_color=NEG_C,
+        line_width=1.5,
+        annotation_text="Random (50%)",
+        annotation_font=dict(size=10, color=NEG_C),
+    )
+
+    fig.update_layout(
+        **{
+            **PLOT_LAYOUT,
+            "title": dict(
+                text=f"{asset_label} — Directional Accuracy",
+                font=dict(size=13, color=asset_color),
+            ),
+            "xaxis": {
+                **PLOT_LAYOUT["xaxis"],
+                "range": [0.40, 0.68],
+                "tickformat": ".0%",
+            },
+            "height": 300,
+        }
+    )
+
     st.plotly_chart(fig, use_container_width=True)
 
-    best_name = lb.iloc[0]["Model"] if not lb.empty else "—"
-    best_acc  = lb.iloc[0]["Accuracy"] if not lb.empty else 0
+    best_name = lb.iloc[0]["Model"]
+    best_acc = lb.iloc[0]["Accuracy"]
+
     st.markdown(
         f"<div class='insight'>📌 <b>{best_name}</b> leads on {asset_label} "
         f"with <b>{best_acc:.1%}</b> directional accuracy. "
