@@ -144,11 +144,30 @@ def load_pred(model_key: str, asset_key: str):
 
     df = pd.read_csv(path)
 
-    # Reverting to your original renaming logic which worked perfectly
-    df.rename(columns={df.columns[0]: "Date"}, inplace=True)
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
+    # 1. If pandas named the empty first column 'Unnamed: 0', rename it safely
+    if "Unnamed: 0" in df.columns:
+        df.rename(columns={"Unnamed: 0": "Date"}, inplace=True)
 
+    # 2. If the Date became the index automatically, reset it safely
+    if "Date" not in df.columns and "actual" in df.columns:
+        if not isinstance(df.index, pd.RangeIndex):
+            df = df.reset_index()
+            # The old index is now the first column. Rename it to Date.
+            if df.columns[0] not in ["actual", "pred", "prob", "forecast", "returns", "au_returns", "ag_returns"]:
+                df.rename(columns={df.columns[0]: "Date"}, inplace=True)
+
+    # 3. Fallback for your original logic: Only rename the first column if it's NOT a critical data column
+    if "Date" not in df.columns:
+        first_col = df.columns[0]
+        if first_col not in ["actual", "pred", "prob", "forecast", "returns", "au_returns", "ag_returns"]:
+            df.rename(columns={first_col: "Date"}, inplace=True)
+
+    # Now safely set the Date index
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
+
+    # Standardize returns column
     for c in ["returns", "au_returns", "ag_returns"]:
         if c in df.columns:
             df["ret"] = df[c]
