@@ -273,3 +273,6 @@ Three things. First, walk-forward retraining for ML and LSTM, not just ARIMA. Se
 *Built as a portfolio project exploring regime-aware model comparison in commodity futures markets.*
 
 ---
+
+*the dashboard is under works thinking of adding more features. thanks for understanding**
+
