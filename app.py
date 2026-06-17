@@ -128,14 +128,10 @@ html, body, [data-testid="stAppViewContainer"] {{
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
-# DATA LOADING  (cached)
-# ─────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────
-# DATA LOADING  (cached)
+# DATA LOADING  (cached - ORIGINAL LOGIC RESTORED)
 # ─────────────────────────────────────────────────────────────
 @st.cache_data
 def load_pred(model_key: str, asset_key: str):
-
     candidates = [
         os.path.join(DATA_DIR, f"preds_{model_key}_{asset_key}.csv"),
         os.path.join(os.path.dirname(DATA_DIR), f"preds_{model_key}_{asset_key}.csv"),
@@ -148,6 +144,7 @@ def load_pred(model_key: str, asset_key: str):
 
     df = pd.read_csv(path)
 
+    # Reverting to your original renaming logic which worked perfectly
     df.rename(columns={df.columns[0]: "Date"}, inplace=True)
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
@@ -164,7 +161,6 @@ def load_pred(model_key: str, asset_key: str):
 
 @st.cache_data
 def load_price():
-
     candidates = [
         "gold_silver_garch.csv",
         "gold_silver_garch(2).csv",
@@ -191,11 +187,18 @@ def load_price():
         df.drop(columns=["ID_Column"], inplace=True)
 
     return df
+
+
+@st.cache_data
+def load_all() -> dict:
+    return {mk: {"au": load_pred(mk, "au"),
+                 "ag": load_pred(mk, "ag")}
+            for mk in MODEL_LABELS}
+
 # ─────────────────────────────────────────────────────────────
-# METRICS
+# METRICS (PATCHED FOR SAFETY)
 # ─────────────────────────────────────────────────────────────
 def metrics(df: pd.DataFrame, rcol: str = None, rval: str = None) -> dict:
-    # Fail-safe added here to check for actual/pred
     if df.empty or "ret" not in df.columns or "actual" not in df.columns or "pred" not in df.columns:
         return {}
         
@@ -242,10 +245,7 @@ def leaderboard(preds, ak, sel_keys):
         })
 
     if len(rows)==0:
-        return pd.DataFrame(columns=[
-            "Model","Accuracy","F1",
-            "Hit Rate","Strategy","B&H","Alpha"
-        ])
+        return pd.DataFrame()
 
     return (
         pd.DataFrame(rows)
@@ -257,7 +257,6 @@ def regime_table(preds: dict, ak: str, sel_keys: list, rcol: str) -> pd.DataFram
     rows = []
     for mk in sel_keys:
         df = preds[mk][ak]
-        # Added safety checks for missing required columns
         if df.empty or rcol not in df.columns or "actual" not in df.columns or "pred" not in df.columns:
             continue
         for rv in sorted(df[rcol].unique()):
@@ -265,8 +264,7 @@ def regime_table(preds: dict, ak: str, sel_keys: list, rcol: str) -> pd.DataFram
             if len(sub) < 10:
                 continue
             acc = accuracy_score(sub["actual"], sub["pred"])
-            f1  = f1_score(sub["actual"], sub["pred"],
-                           average="weighted", zero_division=0)
+            f1  = f1_score(sub["actual"], sub["pred"], average="weighted", zero_division=0)
             rows.append({"Model": MODEL_LABELS[mk],
                          "Regime": rv, "Accuracy": acc,
                          "F1": f1, "n": len(sub)})
@@ -375,8 +373,8 @@ with t1:
         except Exception:
             return ""
 
-    if lb.empty:
-        st.error("No prediction files could be loaded.")
+    if lb is None or lb.empty:
+        st.error("No valid prediction metrics could be calculated.")
         st.stop()
 
     # Safely select style columns to prevent KeyError
@@ -395,64 +393,65 @@ with t1:
 
     st.markdown("<div class='sec'>Accuracy Comparison</div>", unsafe_allow_html=True)
 
-    lb_s = lb.sort_values("Accuracy")
+    lb_s = lb.sort_values("Accuracy", ascending=True) if "Accuracy" in lb.columns else lb
 
-    fig = go.Figure(go.Bar(
-        x=lb_s["Accuracy"],
-        y=lb_s["Model"],
-        orientation="h",
-        marker=dict(
-            color=[MODEL_COLORS.get(m, "#888") for m in lb_s["Model"]],
-            line=dict(color=BORDER, width=1)
-        ),
-        text=[f"{v:.3f}" for v in lb_s["Accuracy"]],
-        textposition="outside",
-        textfont=dict(
-            family="monospace",
-            size=11,
-            color="#E8E8F4"
-        ),
-    ))
-
-    fig.add_vline(
-        x=0.50,
-        line_dash="dot",
-        line_color=NEG_C,
-        line_width=1.5,
-        annotation_text="Random (50%)",
-        annotation_font=dict(size=10, color=NEG_C),
-    )
-
-    fig.update_layout(
-        **{
-            **PLOT_LAYOUT,
-            "title": dict(
-                text=f"{asset_label} — Directional Accuracy",
-                font=dict(size=13, color=asset_color),
+    if not lb_s.empty and "Accuracy" in lb_s.columns:
+        fig = go.Figure(go.Bar(
+            x=lb_s["Accuracy"],
+            y=lb_s["Model"],
+            orientation="h",
+            marker=dict(
+                color=[MODEL_COLORS.get(m, "#888") for m in lb_s["Model"]],
+                line=dict(color=BORDER, width=1)
             ),
-            "xaxis": {
-                **PLOT_LAYOUT["xaxis"],
-                "range": [0.40, 0.68],
-                "tickformat": ".0%",
-            },
-            "height": 300,
-        }
-    )
+            text=[f"{v:.3f}" for v in lb_s["Accuracy"]],
+            textposition="outside",
+            textfont=dict(
+                family="monospace",
+                size=11,
+                color="#E8E8F4"
+            ),
+        ))
 
-    st.plotly_chart(fig, use_container_width=True)
+        fig.add_vline(
+            x=0.50,
+            line_dash="dot",
+            line_color=NEG_C,
+            line_width=1.5,
+            annotation_text="Random (50%)",
+            annotation_font=dict(size=10, color=NEG_C),
+        )
 
-    best_name = lb.iloc[0]["Model"]
-    best_acc = lb.iloc[0]["Accuracy"]
+        fig.update_layout(
+            **{
+                **PLOT_LAYOUT,
+                "title": dict(
+                    text=f"{asset_label} — Directional Accuracy",
+                    font=dict(size=13, color=asset_color),
+                ),
+                "xaxis": {
+                    **PLOT_LAYOUT["xaxis"],
+                    "range": [0.40, 0.68],
+                    "tickformat": ".0%",
+                },
+                "height": 300,
+            }
+        )
 
-    st.markdown(
-        f"<div class='insight'>📌 <b>{best_name}</b> leads on {asset_label} "
-        f"with <b>{best_acc:.1%}</b> directional accuracy. "
-        f"All models cluster 50–56% — expected for daily financial returns. "
-        f"A sustained 53% hit rate is commercially meaningful when "
-        f"combined with a disciplined long/short strategy.</div>",
-        unsafe_allow_html=True,
-    )
-    
+        st.plotly_chart(fig, use_container_width=True)
+
+        best_name = lb.iloc[-1].get("Model", "Unknown") if len(lb) > 0 else "N/A"
+        best_acc = lb.iloc[-1].get("Accuracy", 0) if len(lb) > 0 else 0
+
+        st.markdown(
+            f"<div class='insight'>📌 <b>{best_name}</b> leads on {asset_label} "
+            f"with <b>{best_acc:.1%}</b> directional accuracy. "
+            f"All models cluster 50–56% — expected for daily financial returns. "
+            f"A sustained 53% hit rate is commercially meaningful when "
+            f"combined with a disciplined long/short strategy.</div>",
+            unsafe_allow_html=True,
+        )
+
 # ════════════════════════════════════════════════════════════
 # TAB 2 — REGIME HEATMAP
 # ════════════════════════════════════════════════════════════
@@ -463,15 +462,15 @@ with t2:
             st.info("No data for selected models / regime.")
             return
         sub = lb_df[lb_df["Model"].isin(sel_labels)]
-        if sub.empty:
-            st.info("No data for selected models.")
+        if sub.empty or val_col not in sub.columns:
+            st.info("No valid data for selected models.")
             return
         try:
-            pivot = sub.pivot(index="Model", columns="Regime",
-                              values=val_col)
+            pivot = sub.pivot(index="Model", columns="Regime", values=val_col)
         except Exception:
             st.info("Not enough data to build heatmap.")
             return
+            
         fig = go.Figure(go.Heatmap(
             z=pivot.values,
             x=[c.replace("_", " ").title() for c in pivot.columns],
@@ -482,54 +481,46 @@ with t2:
             texttemplate="%{text:.3f}",
             textfont=dict(family="monospace", size=13, color="white"),
             showscale=True,
-            colorbar=dict(tickformat=".2f",
-                          tickfont=dict(family="monospace", size=10)),
+            colorbar=dict(tickformat=".2f", tickfont=dict(family="monospace", size=10)),
         ))
         fig.update_layout(**{**PLOT_LAYOUT,
-            "title": dict(text=title,
-                          font=dict(size=12, color=asset_color)),
+            "title": dict(text=title, font=dict(size=12, color=asset_color)),
             "height": 320,
             "xaxis": dict(side="bottom"),
         })
         st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("<div class='sec'>Accuracy by Volatility Regime (GARCH)</div>",
-                unsafe_allow_html=True)
+    st.markdown("<div class='sec'>Accuracy by Volatility Regime (GARCH)</div>", unsafe_allow_html=True)
     vol_lb = regime_table(all_preds, ak, sel_keys, "vol_regime")
-    _heatmap(vol_lb, "Accuracy",
-             f"{asset_label} — Accuracy by GARCH Volatility Regime",
+    _heatmap(vol_lb, "Accuracy", f"{asset_label} — Accuracy by GARCH Volatility Regime",
              [[0, NEG_C], [0.5, "#F59E0B"], [1, POS_C]], 0.44, 0.65)
-    _heatmap(vol_lb, "F1",
-             f"{asset_label} — Weighted F1 by GARCH Volatility Regime",
+    _heatmap(vol_lb, "F1", f"{asset_label} — Weighted F1 by GARCH Volatility Regime",
              [[0, "#4B0082"], [0.5, "#7C3AED"], [1, "#A855F7"]], 0.35, 0.65)
 
-    st.markdown("<div class='sec'>Accuracy by Period Regime</div>",
-                unsafe_allow_html=True)
+    st.markdown("<div class='sec'>Accuracy by Period Regime</div>", unsafe_allow_html=True)
     per_lb = regime_table(all_preds, ak, sel_keys, "period_regime")
-    _heatmap(per_lb, "Accuracy",
-             f"{asset_label} — Accuracy by Period Regime",
+    _heatmap(per_lb, "Accuracy", f"{asset_label} — Accuracy by Period Regime",
              [[0, NEG_C], [0.5, "#F59E0B"], [1, POS_C]], 0.44, 0.65)
 
-    st.markdown("<div class='sec'>Rolling 63-Day Accuracy — All Models</div>",
-                unsafe_allow_html=True)
+    st.markdown("<div class='sec'>Rolling 63-Day Accuracy — All Models</div>", unsafe_allow_html=True)
     fig4 = go.Figure()
     for mk in sel_keys:
         df = all_preds[mk][ak]
+        # SAFEGUARD: Verifying necessary columns exist to prevent crashes
         if df.empty or "actual" not in df.columns or "pred" not in df.columns:
             continue
+            
         ra = (df["actual"] == df["pred"]).rolling(63).mean()
         fig4.add_trace(go.Scatter(
             x=ra.index, y=ra,
             name=MODEL_LABELS[mk],
             line=dict(color=MODEL_COLORS[MODEL_LABELS[mk]], width=1.5),
         ))
-    fig4.add_hline(y=0.50, line_dash="dot",
-                   line_color=NEG_C, line_width=1.2)
+        
+    fig4.add_hline(y=0.50, line_dash="dot", line_color=NEG_C, line_width=1.2)
     fig4.update_layout(**{**PLOT_LAYOUT,
-        "title": dict(text=f"{asset_label} — Rolling Directional Accuracy (63-day)",
-                      font=dict(size=12, color=asset_color)),
-        "yaxis": {**PLOT_LAYOUT["yaxis"],
-                  "tickformat": ".0%", "range": [0.28, 0.78]},
+        "title": dict(text=f"{asset_label} — Rolling Directional Accuracy (63-day)", font=dict(size=12, color=asset_color)),
+        "yaxis": {**PLOT_LAYOUT["yaxis"], "tickformat": ".0%", "range": [0.28, 0.78]},
         "height": 360,
     })
     st.plotly_chart(fig4, use_container_width=True)
@@ -538,8 +529,7 @@ with t2:
 # TAB 3 — BACKTEST
 # ════════════════════════════════════════════════════════════
 with t3:
-    st.markdown("<div class='sec'>Cumulative L/S Strategy vs Buy & Hold</div>",
-                unsafe_allow_html=True)
+    st.markdown("<div class='sec'>Cumulative L/S Strategy vs Buy & Hold</div>", unsafe_allow_html=True)
 
     fig_bt = go.Figure()
     bh_done = False
@@ -585,8 +575,7 @@ with t3:
     for col, rv in zip([col1, col2], ["low_vol", "high_vol"]):
         with col:
             rl = rv.replace("_", " ").title()
-            st.markdown(f"<div class='sec'>{rl} Regime</div>",
-                        unsafe_allow_html=True)
+            st.markdown(f"<div class='sec'>{rl} Regime</div>", unsafe_allow_html=True)
             fig_r = go.Figure()
             bh_r  = False
             for mk in sel_keys:
@@ -620,19 +609,16 @@ with t3:
             })
             st.plotly_chart(fig_r, use_container_width=True)
 
-    # Monthly returns heatmap — best accuracy model
+    # Monthly returns heatmap
     best_mk = max(
         (mk for mk in sel_keys if not all_preds[mk][ak].empty),
         key=lambda mk: metrics(all_preds[mk][ak]).get("accuracy", 0),
         default=None,
     )
     if best_mk:
-        st.markdown(
-            f"<div class='sec'>Monthly P&L — {MODEL_LABELS[best_mk]}</div>",
-            unsafe_allow_html=True,
-        )
         df_b = all_preds[best_mk][ak].copy()
-        if "pred" in df_b.columns and "ret" in df_b.columns:
+        if not df_b.empty and "pred" in df_b.columns and "ret" in df_b.columns:
+            st.markdown(f"<div class='sec'>Monthly P&L — {MODEL_LABELS[best_mk]}</div>", unsafe_allow_html=True)
             sig  = np.where(df_b["pred"] == 1, 1, -1)
             df_b["sr"]    = sig * df_b["ret"]
             df_b["year"]  = df_b.index.year
@@ -703,8 +689,7 @@ with t4:
 
         # Confusion matrix
         with col_l:
-            st.markdown("<div class='sec'>Confusion Matrix</div>",
-                        unsafe_allow_html=True)
+            st.markdown("<div class='sec'>Confusion Matrix</div>", unsafe_allow_html=True)
             cm = confusion_matrix(df_dd["actual"], df_dd["pred"])
             fig_cm = go.Figure(go.Heatmap(
                 z=cm,
@@ -726,8 +711,7 @@ with t4:
         # Prob / forecast distribution
         with col_r:
             if "prob" in df_dd.columns and not df_dd["prob"].isna().all():
-                st.markdown("<div class='sec'>Prediction Probability Distribution</div>",
-                            unsafe_allow_html=True)
+                st.markdown("<div class='sec'>Prediction Probability Distribution</div>", unsafe_allow_html=True)
                 fig_p = go.Figure()
                 for cls, colour, name in [
                     (0, NEG_C, "Actual DOWN"),
@@ -739,19 +723,16 @@ with t4:
                         marker_color=colour, opacity=0.7,
                         nbinsx=40, histnorm="probability density",
                     ))
-                fig_p.add_vline(x=0.5, line_dash="dot",
-                                line_color="#888888", line_width=1.2)
+                fig_p.add_vline(x=0.5, line_dash="dot", line_color="#888888", line_width=1.2)
                 fig_p.update_layout(**{**PLOT_LAYOUT,
                     "barmode": "overlay", "height": 280,
-                    "xaxis": {**PLOT_LAYOUT["xaxis"],
-                              "title": "P(UP)", "range": [0, 1]},
+                    "xaxis": {**PLOT_LAYOUT["xaxis"], "title": "P(UP)", "range": [0, 1]},
                     "margin": dict(l=30, r=20, t=30, b=40),
                 })
                 st.plotly_chart(fig_p, use_container_width=True)
 
             elif "forecast" in df_dd.columns:
-                st.markdown("<div class='sec'>Forecast Distribution</div>",
-                            unsafe_allow_html=True)
+                st.markdown("<div class='sec'>Forecast Distribution</div>", unsafe_allow_html=True)
                 fig_fc = go.Figure(go.Histogram(
                     x=df_dd["forecast"], nbinsx=80,
                     marker_color=MODEL_COLORS.get(sel_label, GOLD_C),
@@ -769,8 +750,7 @@ with t4:
                 st.plotly_chart(fig_fc, use_container_width=True)
 
         # Per-regime accuracy bars
-        st.markdown("<div class='sec'>Accuracy by Regime</div>",
-                    unsafe_allow_html=True)
+        st.markdown("<div class='sec'>Accuracy by Regime</div>", unsafe_allow_html=True)
         cv1, cv2 = st.columns(2)
         for col, rc, rt in [
             (cv1, "vol_regime",    "Volatility Regime"),
@@ -797,21 +777,16 @@ with t4:
                     x=rdf["Accuracy"],
                     y=rdf["Regime"],
                     orientation="h",
-                    marker_color=[POS_C if v > 0.5 else NEG_C
-                                  for v in rdf["Accuracy"]],
-                    text=[f"{v:.3f}  (n={n})"
-                          for v, n in zip(rdf["Accuracy"], rdf["n"])],
+                    marker_color=[POS_C if v > 0.5 else NEG_C for v in rdf["Accuracy"]],
+                    text=[f"{v:.3f}  (n={n})" for v, n in zip(rdf["Accuracy"], rdf["n"])],
                     textposition="outside",
                     textfont=dict(family="monospace", size=10),
                 ))
-                fig_rb.add_vline(x=0.50, line_dash="dot",
-                                 line_color=NEG_C, line_width=1.1)
+                fig_rb.add_vline(x=0.50, line_dash="dot", line_color=NEG_C, line_width=1.1)
                 fig_rb.update_layout(**{**PLOT_LAYOUT,
                     "height": 240,
-                    "title": dict(text=rt,
-                                  font=dict(size=11, color="#A0A0B8")),
-                    "xaxis": {**PLOT_LAYOUT["xaxis"],
-                              "range": [0.40, 0.70], "tickformat": ".0%"},
+                    "title": dict(text=rt, font=dict(size=11, color="#A0A0B8")),
+                    "xaxis": {**PLOT_LAYOUT["xaxis"], "range": [0.40, 0.70], "tickformat": ".0%"},
                     "margin": dict(l=110, r=70, t=40, b=30),
                 })
                 st.plotly_chart(fig_rb, use_container_width=True)
@@ -841,8 +816,7 @@ with t5:
     elif df_sig.empty or "pred" not in df_sig.columns:
         st.warning("No valid prediction data for this model.")
     else:
-        st.markdown("<div class='sec'>Price + Signals + GARCH Volatility</div>",
-                    unsafe_allow_html=True)
+        st.markdown("<div class='sec'>Price + Signals + GARCH Volatility</div>", unsafe_allow_html=True)
 
         fig_ps = make_subplots(
             rows=2, cols=1,
@@ -920,8 +894,7 @@ with t5:
 
         # Regime overlay
         if vreg_col in price_data.columns:
-            st.markdown("<div class='sec'>GARCH Volatility Regimes on Price</div>",
-                        unsafe_allow_html=True)
+            st.markdown("<div class='sec'>GARCH Volatility Regimes on Price</div>", unsafe_allow_html=True)
             fig_ro = go.Figure()
             fig_ro.add_trace(go.Scatter(
                 x=price_data.index,
