@@ -132,7 +132,6 @@ html, body, [data-testid="stAppViewContainer"] {{
 # ─────────────────────────────────────────────────────────────
 @st.cache_data
 def load_pred(model_key: str, asset_key: str):
-
     candidates = [
         os.path.join(DATA_DIR, f"preds_{model_key}_{asset_key}.csv"),
         os.path.join(os.path.dirname(DATA_DIR), f"preds_{model_key}_{asset_key}.csv"),
@@ -144,11 +143,32 @@ def load_pred(model_key: str, asset_key: str):
         return pd.DataFrame()
 
     df = pd.read_csv(path)
+    
+    # Clean column names
+    df.columns = [str(c).strip() for c in df.columns]
 
-    df.rename(columns={df.columns[0]: "Date"}, inplace=True)
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
+    # Handle case where index was parsed automatically
+    if not isinstance(df.index, pd.RangeIndex):
+        df.index = pd.to_datetime(df.index, errors="coerce")
+        df.index.name = "Date"
+        df = df.reset_index()
 
+    # Safely identify and rename Date column
+    if "Date" not in df.columns:
+        if "Unnamed: 0" in df.columns:
+            df.rename(columns={"Unnamed: 0": "Date"}, inplace=True)
+        else:
+            # Fallback: rename the first column only if it's not a core metric
+            first_col = df.columns[0]
+            if first_col not in ["actual", "pred", "prob", "forecast", "returns", "au_returns", "ag_returns"]:
+                df.rename(columns={first_col: "Date"}, inplace=True)
+
+    # Set and sort Date index
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
+
+    # Standardize returns column
     for c in ["returns", "au_returns", "ag_returns"]:
         if c in df.columns:
             df["ret"] = df[c]
@@ -161,7 +181,6 @@ def load_pred(model_key: str, asset_key: str):
 
 @st.cache_data
 def load_price():
-
     candidates = [
         "gold_silver_garch.csv",
         "gold_silver_garch(2).csv",
@@ -199,19 +218,22 @@ def load_all() -> dict:
 # ─────────────────────────────────────────────────────────────
 # METRICS
 # ─────────────────────────────────────────────────────────────
-def metrics(df: pd.DataFrame, rcol: str = None,
-            rval: str = None) -> dict:
-    if df.empty or "ret" not in df.columns:
+def metrics(df: pd.DataFrame, rcol: str = None, rval: str = None) -> dict:
+    # Fail-safe added here to check for actual/pred
+    if df.empty or "ret" not in df.columns or "actual" not in df.columns or "pred" not in df.columns:
         return {}
+        
     sub = df.copy()
     if rcol and rval and rval != "All" and rcol in sub.columns:
         sub = sub[sub[rcol] == rval]
     if len(sub) < 10:
         return {}
+        
     sig     = np.where(sub["pred"] == 1, 1, -1)
     strat   = (1 + sig * sub["ret"]).cumprod().iloc[-1] - 1
     bh      = (1 + sub["ret"]).cumprod().iloc[-1] - 1
     hit     = (sig == np.sign(sub["ret"].values)).mean()
+    
     return dict(
         accuracy = accuracy_score(sub["actual"], sub["pred"]),
         f1       = f1_score(sub["actual"], sub["pred"],
@@ -225,21 +247,14 @@ def metrics(df: pd.DataFrame, rcol: str = None,
 
 
 def leaderboard(preds, ak, sel_keys):
-
     rows = []
-
     for mk in sel_keys:
-
         df = preds[mk][ak]
-
         if df.empty:
             continue
-
         m = metrics(df)
-
         if not m:
             continue
-
         rows.append({
             "Model": MODEL_LABELS[mk],
             "Accuracy": round(m["accuracy"],4),
@@ -262,12 +277,12 @@ def leaderboard(preds, ak, sel_keys):
         .reset_index(drop=True)
     )
 
-def regime_table(preds: dict, ak: str, sel_keys: list,
-                 rcol: str) -> pd.DataFrame:
+def regime_table(preds: dict, ak: str, sel_keys: list, rcol: str) -> pd.DataFrame:
     rows = []
     for mk in sel_keys:
         df = preds[mk][ak]
-        if df.empty or rcol not in df.columns:
+        # Added safety checks for missing required columns
+        if df.empty or rcol not in df.columns or "actual" not in df.columns or "pred" not in df.columns:
             continue
         for rv in sorted(df[rcol].unique()):
             sub = df[df[rcol] == rv]
@@ -521,7 +536,7 @@ with t2:
     fig4 = go.Figure()
     for mk in sel_keys:
         df = all_preds[mk][ak]
-        if df.empty:
+        if df.empty or "actual" not in df.columns or "pred" not in df.columns:
             continue
         ra = (df["actual"] == df["pred"]).rolling(63).mean()
         fig4.add_trace(go.Scatter(
@@ -551,7 +566,7 @@ with t3:
     bh_done = False
     for mk in sel_keys:
         df = all_preds[mk][ak]
-        if df.empty or "ret" not in df.columns:
+        if df.empty or "ret" not in df.columns or "pred" not in df.columns:
             continue
         sub = df.copy()
         if rfilter != "All" and rcol in sub.columns:
@@ -597,7 +612,7 @@ with t3:
             bh_r  = False
             for mk in sel_keys:
                 df = all_preds[mk][ak]
-                if df.empty or "vol_regime" not in df.columns:
+                if df.empty or "vol_regime" not in df.columns or "pred" not in df.columns or "ret" not in df.columns:
                     continue
                 sub = df[df["vol_regime"] == rv]
                 if len(sub) < 5:
@@ -638,33 +653,34 @@ with t3:
             unsafe_allow_html=True,
         )
         df_b = all_preds[best_mk][ak].copy()
-        sig  = np.where(df_b["pred"] == 1, 1, -1)
-        df_b["sr"]    = sig * df_b["ret"]
-        df_b["year"]  = df_b.index.year
-        df_b["month"] = df_b.index.month
-        monthly = df_b.groupby(["year", "month"])["sr"].sum().unstack()
-        month_map = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
-                     7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
-        monthly.columns = [month_map.get(c, str(c)) for c in monthly.columns]
-        fig_m = go.Figure(go.Heatmap(
-            z=monthly.values,
-            x=monthly.columns.tolist(),
-            y=monthly.index.tolist(),
-            colorscale=[[0, NEG_C], [0.5, CARD_BG], [1, POS_C]],
-            zmid=0,
-            text=monthly.values,
-            texttemplate="%{text:.1%}",
-            textfont=dict(family="monospace", size=9, color="white"),
-            showscale=True,
-            colorbar=dict(tickformat=".0%"),
-        ))
-        fig_m.update_layout(**{**PLOT_LAYOUT,
-            "title": dict(
-                text=f"{asset_label} Monthly P&L — {MODEL_LABELS[best_mk]}",
-                font=dict(size=12, color=asset_color)),
-            "height": 380,
-        })
-        st.plotly_chart(fig_m, use_container_width=True)
+        if "pred" in df_b.columns and "ret" in df_b.columns:
+            sig  = np.where(df_b["pred"] == 1, 1, -1)
+            df_b["sr"]    = sig * df_b["ret"]
+            df_b["year"]  = df_b.index.year
+            df_b["month"] = df_b.index.month
+            monthly = df_b.groupby(["year", "month"])["sr"].sum().unstack()
+            month_map = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
+                         7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+            monthly.columns = [month_map.get(c, str(c)) for c in monthly.columns]
+            fig_m = go.Figure(go.Heatmap(
+                z=monthly.values,
+                x=monthly.columns.tolist(),
+                y=monthly.index.tolist(),
+                colorscale=[[0, NEG_C], [0.5, CARD_BG], [1, POS_C]],
+                zmid=0,
+                text=monthly.values,
+                texttemplate="%{text:.1%}",
+                textfont=dict(family="monospace", size=9, color="white"),
+                showscale=True,
+                colorbar=dict(tickformat=".0%"),
+            ))
+            fig_m.update_layout(**{**PLOT_LAYOUT,
+                "title": dict(
+                    text=f"{asset_label} Monthly P&L — {MODEL_LABELS[best_mk]}",
+                    font=dict(size=12, color=asset_color)),
+                "height": 380,
+            })
+            st.plotly_chart(fig_m, use_container_width=True)
 
 # ════════════════════════════════════════════════════════════
 # TAB 4 — MODEL DEEP-DIVE
@@ -682,8 +698,8 @@ with t4:
     sel_mk = next(k for k, v in MODEL_LABELS.items() if v == sel_label)
     df_dd  = all_preds[sel_mk][ak]
 
-    if df_dd.empty:
-        st.warning("No data for this model.")
+    if df_dd.empty or "actual" not in df_dd.columns or "pred" not in df_dd.columns:
+        st.warning("No valid data for this model (missing 'actual' or 'pred' columns).")
     else:
         m = metrics(df_dd)
         if m:
@@ -730,7 +746,7 @@ with t4:
 
         # Prob / forecast distribution
         with col_r:
-            if not df_dd["prob"].isna().all():
+            if "prob" in df_dd.columns and not df_dd["prob"].isna().all():
                 st.markdown("<div class='sec'>Prediction Probability Distribution</div>",
                             unsafe_allow_html=True)
                 fig_p = go.Figure()
@@ -843,8 +859,8 @@ with t5:
 
     if price_data.empty or price_col not in price_data.columns:
         st.warning("Price data not found.")
-    elif df_sig.empty:
-        st.warning("No predictions for this model.")
+    elif df_sig.empty or "pred" not in df_sig.columns:
+        st.warning("No valid prediction data for this model.")
     else:
         st.markdown("<div class='sec'>Price + Signals + GARCH Volatility</div>",
                     unsafe_allow_html=True)
