@@ -274,5 +274,7 @@ Three things. First, walk-forward retraining for ML and LSTM, not just ARIMA. Se
 
 ---
 
-*the dashboard is under works thinking of adding more features. thanks for understanding**
+##Disclaimer
+**README and all other files are undergoing some modifications. Data is stil March, I've extended the data till June. App works perfectly. Some modifications has to be made. Thanks for understanding**
+--
 
